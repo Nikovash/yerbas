@@ -948,7 +948,7 @@ fi
 BITCOIN_QT_INIT
 
 dnl sets $bitcoin_enable_qt, $bitcoin_enable_qt_test, $bitcoin_enable_qt_dbus
-dnl Native GUI builds use shared system Qt 6.8 or newer.
+dnl Both depends and system GUI builds require Qt 6.8 or newer.
 BITCOIN_QT_CONFIGURE([6.8.0])
 
 if test x$build_bitcoin_utils$build_bitcoind$bitcoin_enable_qt$use_tests$use_bench = xnonononono; then

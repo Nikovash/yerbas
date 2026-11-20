@@ -93,11 +93,10 @@ $(host_arch)_$(host_os)_id_string+=$(shell $(host_CXX) --version 2>/dev/null)
 $(host_arch)_$(host_os)_id_string+=$(shell $(host_RANLIB) --version 2>/dev/null)
 $(host_arch)_$(host_os)_id_string+=$(shell $(host_STRIP) --version 2>/dev/null)
 
-# Plain make selects the supported GUI dependency path on native Linux.
-# Explicit headless/cross-build choices must not inherit that default.
+# Native Linux defaults to static Qt. Native macOS keeps using its desktop Qt.
 ifeq ($(NO_QT),)
-ifeq ($(build_os),linux)
-ifeq ($(canonical_host),$(build))
+ifeq ($(host_arch)_$(host_os),$(build_arch)_$(build_os))
+ifeq ($(host_os),darwin)
 USE_SYSTEM_QT ?= 1
 endif
 endif
@@ -118,8 +117,11 @@ ifeq ($(NO_QT),)
 ifeq ($(build_os)_$(host_os)_$(host_arch),linux_mingw32_x86_64)
 qt_packages_ = $(qt_packages) qt qt5compat
 qt_native_packages = native_qt native_qttools
+else ifeq ($(build_os)_$(host_os)_$(build_arch),linux_linux_$(host_arch))
+qt_packages_ = $(qt_packages) xkbcommon qt qt5compat qttools
+qt_native_packages = native_meson native_ninja native_bison
 else
-$(error GUI dependencies require USE_SYSTEM_QT=1 for native builds or Linux to x86_64-w64-mingw32. Use NO_QT=1 only for headless builds)
+$(error GUI dependencies support native Linux/macOS and Linux to x86_64-w64-mingw32. Use NO_QT=1 for other targets)
 endif
 endif
 endif
@@ -138,6 +140,10 @@ all_packages = $(packages) $(native_packages)
 meta_depends = Makefile funcs.mk builders/default.mk hosts/default.mk hosts/$(host_os).mk builders/$(build_os).mk
 
 $(host_arch)_$(host_os)_native_toolchain?=$($(host_os)_native_toolchain)
+
+ifeq ($(host_os),linux)
+qt5compat_recipe_inputs = ../ci/build-native-qt.py
+endif
 
 include funcs.mk
 

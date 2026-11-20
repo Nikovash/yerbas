@@ -19,23 +19,7 @@ env:
   FALLBACK_DOWNLOAD_PATH: https://bitcoincore.org/depends-sources
 
 jobs:
-  appimage-runtime:
-    name: AppImage extraction runtime
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-        with:
-          persist-credentials: false
-      - run: bash ci/build-appimage-runtime.sh appimage-runtime
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
-        with:
-          name: appimage-extraction-runtime
-          path: appimage-runtime/
-          if-no-files-found: error
-
   build:
-    needs: appimage-runtime
     name: ${{ matrix.platform.name }} Build
     runs-on: ${{ matrix.platform.runner }}
     container: ${{ matrix.platform.container }}
@@ -105,13 +89,6 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Download AppImage runtime
-        if: matrix.platform.id == 'debian13'
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
-        with:
-          name: appimage-extraction-runtime
-          path: appimage-runtime
-
       - name: Install Linux build tools
         if: runner.os == 'Linux'
         run: |
@@ -125,21 +102,14 @@ jobs:
           fi
 
       - name: Install native Linux Qt build dependencies
-        if: runner.os == 'Linux' && matrix.platform.id != 'win64' && matrix.platform.id != 'ubuntu26'
+        if: runner.os == 'Linux' && matrix.platform.id != 'win64'
         run: |
-          sudo apt-get install -y libfontconfig1-dev libssl-dev libx11-dev libx11-xcb-dev \
+          sudo apt-get install -y libfontconfig1-dev libbrotli-dev libssl-dev libx11-dev libx11-xcb-dev \
             libxext-dev libxfixes-dev libxi-dev libxrender-dev libxcb1-dev libxcb-cursor-dev \
             libxcb-glx0-dev libxcb-icccm4-dev libxcb-image0-dev libxcb-keysyms1-dev libxcb-util-dev \
             libxcb-randr0-dev libxcb-render-util0-dev libxcb-shape0-dev libxcb-shm0-dev \
             libxcb-sync-dev libxcb-xfixes0-dev libxcb-xinerama0-dev libxcb-xkb-dev \
             libxkbcommon-dev libxkbcommon-x11-dev
-
-      - name: Install Ubuntu Qt development tools
-        if: matrix.platform.id == 'ubuntu26'
-        run: |
-          sudo apt-get install -y qt6-base-dev qt6-base-dev-tools qt6-5compat-dev \
-            qt6-tools-dev-tools qt6-qpa-plugins libgl-dev
-          pkg-config --atleast-version=6.8 Qt6Core Qt6Core5Compat Qt6Test
 
       - name: Install macOS build tools
         if: runner.os == 'macOS'
@@ -162,7 +132,7 @@ jobs:
           path: |
             depends/sources
             depends/built
-          key: depends-${{ matrix.platform.id }}-${{ hashFiles('depends/Makefile', 'depends/**/*.mk', 'depends/patches/**', 'depends/config.site.in') }}
+          key: depends-${{ matrix.platform.id }}-${{ hashFiles('depends/Makefile', 'depends/**/*.mk', 'depends/patches/**', 'depends/config.site.in', 'ci/build-native-qt.py') }}
           restore-keys: |
             depends-${{ matrix.platform.id }}-
 
@@ -174,29 +144,26 @@ jobs:
           if [[ "$RUNNER_OS" == macOS ]]; then
             extra_args+=(OSX_MIN_VERSION=11.0)
           fi
-          if [[ "$PLATFORM_ID" != win64 ]]; then
+          if [[ "$RUNNER_OS" == macOS ]]; then
             extra_args+=(USE_SYSTEM_QT=1)
           fi
           make -C depends -j"$BUILD_JOBS" HOST="$HOST_TRIPLE" NO_UPNP=1 "${extra_args[@]}" \
             2>&1 | tee ci-logs/depends.log
 
       - name: Cache native desktop Qt
-        if: matrix.platform.id != 'win64' && matrix.platform.id != 'ubuntu26'
+        if: runner.os == 'macOS'
         id: native-qt-cache
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: qt-native
-          key: native-qt-static-linux-v1-${{ matrix.platform.id }}-${{ hashFiles('ci/build-native-qt.py', 'depends/packages/qt.mk', 'depends/packages/qt5compat.mk', 'depends/packages/native_qttools.mk') }}
+          key: native-qt-macos-v1-${{ matrix.platform.id }}-${{ hashFiles('ci/build-native-qt.py', 'depends/packages/qt.mk', 'depends/packages/qt5compat.mk', 'depends/packages/native_qttools.mk') }}
 
       - name: Build and verify native desktop Qt
-        if: matrix.platform.id != 'win64' && matrix.platform.id != 'ubuntu26'
+        if: runner.os == 'macOS'
         run: |
           set -euo pipefail
-          # Keep the array nonempty for macOS Bash 3.2 with set -u.
-          qt_args=(--prefix "$PWD/qt-native")
-          if [[ "$RUNNER_OS" == Linux ]]; then qt_args+=(--static-linux); fi
           if [[ ! -f qt-native/.complete ]]; then
-            python3 ci/build-native-qt.py "${qt_args[@]}" \
+            python3 ci/build-native-qt.py --prefix "$PWD/qt-native" \
               --cmake "$PWD/depends/$HOST_TRIPLE/native/bin/cmake" --jobs "$BUILD_JOBS" \
               2>&1 | tee ci-logs/native-qt.log
           fi
@@ -293,19 +260,7 @@ jobs:
               install -m755 "src/${name}${BINARY_EXTENSION}" package/
             done
             install -m755 "src/test/test_yerbas${BINARY_EXTENSION}" test-binaries/
-            if [[ "$PLATFORM_ID" == ubuntu26 ]]; then
-              # Copy real executables when libtool generated launcher scripts.
-              for entry in "src/qt/yerbas-qt:package" "src/qt/test/test_yerbas-qt:test-binaries"; do
-                source="${entry%%:*}"
-                destination="${entry#*:}"
-                real="$(dirname "$source")/.libs/$(basename "$source")"
-                if [[ -f "$real" ]]; then source="$real"; fi
-                install -m755 "$source" "$destination/"
-              done
-              printf '%s\n' 'Ubuntu 26 Qt wallet: requires the Ubuntu Qt 6 runtime.' \
-                'Install: sudo apt-get install libqt6widgets6 libqt6network6 libqt6core5compat6 qt6-qpa-plugins' \
-                > package/README-Qt.txt
-            elif [[ "$RUNNER_OS" == Linux ]]; then
+            if [[ "$RUNNER_OS" == Linux ]]; then
               # Copy real executables when libtool generated launcher scripts.
               for entry in "src/qt/yerbas-qt:package" "src/qt/test/test_yerbas-qt:test-binaries"; do
                 source="${entry%%:*}"
@@ -322,9 +277,10 @@ jobs:
                   exit 1
                 fi
               done
+              python3 ci/build-native-qt.py --check-linux-elf package/yerbas-qt
               QT_QPA_PLATFORM=minimal ./package/yerbas-qt -version
               # Keep licensing material alongside the archive, not in yerbas-build.
-              cp -R "$QT_NATIVE_PREFIX/share/licenses" artifacts/licenses
+              cp -R "depends/$HOST_TRIPLE/share/licenses" artifacts/licenses
               cp COPYING artifacts/COPYING
             else
               python3 ci/package-native-qt.py --prefix "$QT_NATIVE_PREFIX"
@@ -337,17 +293,8 @@ jobs:
             mkdir test-binaries
             mv test-runtime.tar.gz test-binaries/
           fi
-          if [[ "$PLATFORM_ID" == debian13 ]]; then
-            sudo apt-get install -y --no-install-recommends squashfs-tools fonts-dejavu-core
-            (cd appimage-runtime && sha256sum -c SHA256SUMS)
-            python3 ci/package-debian-appimage.py --binary package/yerbas-qt \
-              --runtime appimage-runtime/runtime-x86_64 --icon src/qt/res/icons/yerbas.png \
-              --notices artifacts/appimage-notices
-            cp appimage-runtime/LICENSE-AppImage-runtime appimage-runtime/runtime-source.txt artifacts/appimage-notices/
-          fi
           metadata=artifacts
-          if [[ "$PLATFORM_ID" == ubuntu26 ]]; then metadata=package; fi
-          if [[ "$RUNNER_OS" == Linux && "$PLATFORM_ID" != ubuntu26 ]]; then
+          if [[ "$RUNNER_OS" == Linux && "$PLATFORM_ID" != win64 ]]; then
             test "$(find package -mindepth 1 -maxdepth 1 -type f | wc -l)" -eq 3
             test "$(find package -mindepth 1 -maxdepth 1 | wc -l)" -eq 3
           elif [[ "$RUNNER_OS" == macOS ]]; then
@@ -478,22 +425,6 @@ jobs:
         shell: bash
         run: tar -xzf test-binaries/test-runtime.tar.gz -C test-binaries
 
-      - name: Install native Linux Qt test runtime
-        if: runner.os == 'Linux' && matrix.platform.id != 'ubuntu26'
-        shell: bash
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libfontconfig1 libxkbcommon-x11-0 libxcb-cursor0 \
-            libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 libxcb-xinerama0 \
-            libxcb-shape0 libxcb-sync1 libxcb-xfixes0 libxcb-randr0 libx11-xcb1
-
-      - name: Install Ubuntu Qt test runtime
-        if: matrix.platform.id == 'ubuntu26'
-        shell: bash
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libqt6widgets6 libqt6network6 libqt6core5compat6 libqt6test6 qt6-qpa-plugins
-
       - name: Restore executable permission
         if: runner.os != 'Windows'
         shell: bash
@@ -512,8 +443,6 @@ jobs:
           mkdir -p test-results
           if [[ "$RUNNER_OS" == macOS ]]; then
             ./test-binaries/test_yerbas-qt.app/Contents/MacOS/test_yerbas-qt 2>&1 | tee test-results/qt-tests.log
-          elif [[ "${{ matrix.platform.id }}" == ubuntu26 ]]; then
-            QT_QPA_PLATFORM=minimal ./test-binaries/test_yerbas-qt 2>&1 | tee test-results/qt-tests.log
           else
             QT_QPA_PLATFORM=minimal ./test-binaries/test_yerbas-qt 2>&1 | tee test-results/qt-tests.log
           fi
@@ -559,8 +488,8 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-  debian-appimage:
-    name: Debian 13 AppImage (no extra packages)
+  debian-raw-elf:
+    name: Debian 13 ELF on Ubuntu 24.04 (no extra libraries)
     needs: build
     if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
@@ -573,10 +502,10 @@ jobs:
         with:
           name: yerbas-debian13-binaries
           path: runtime-artifact
-      - run: bash ci/test-debian-appimage.sh runtime-artifact runtime-results
+      - run: bash ci/test-debian-raw-elf.sh runtime-artifact runtime-results
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         if: always()
         with:
-          name: yerbas-debian13-appimage-results
+          name: yerbas-debian13-elf-results
           path: runtime-results/
           if-no-files-found: warn
