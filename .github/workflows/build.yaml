@@ -171,13 +171,6 @@ jobs:
           pkg-config --atleast-version=6.8 Qt6Core Qt6Gui Qt6Widgets Qt6Network Qt6Core5Compat Qt6Test
           echo "QT_NATIVE_PREFIX=$PWD/qt-native" >> "$GITHUB_ENV"
 
-      - name: Resolve static Windows Qt linkage
-        if: matrix.platform.id == 'win64'
-        run: |
-          python3 ci/build-native-qt.py --prefix "$PWD/depends/$HOST_TRIPLE" \
-            --metadata-only --windows-host "$HOST_TRIPLE" \
-            --cmake "$PWD/depends/$HOST_TRIPLE/native/bin/cmake" --jobs "$BUILD_JOBS"
-
       - name: Configure with wallet and tests enabled
         run: |
           set -euo pipefail

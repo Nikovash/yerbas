@@ -183,7 +183,7 @@ linux_qt_cmake_cross = -DCMAKE_SYSTEM_NAME=Linux -DCMAKE_SYSTEM_PROCESSOR=$(host
 $(host_arch)_$(host_os)_id_string += $(LINUX_QT_TARGET_PKG_CONFIG_LIBDIR) $(LINUX_QT_TARGET_LIBRARY_PATH) $(LINUX_QT_TARGET_INCLUDE_PATH)
 endif
 
-ifeq ($(host_os),linux)
+ifneq ($(filter linux mingw32,$(host_os)),)
 qt5compat_recipe_inputs = ../ci/build-native-qt.py
 endif
 

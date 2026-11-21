@@ -44,8 +44,8 @@ The static Linux builds use the default depends Qt SDK. Its Core5Compat recipe
 uses Qt's CMake targets to resolve libraries and static plugin initialization
 objects and emits pkg-config metadata for Autotools. macOS uses
 `ci/build-native-qt.py` to build the shared Qt SDK and sets `QT_NATIVE_PREFIX`
-for configure. Windows uses the same script to resolve static link metadata
-with `--metadata-only --windows-host x86_64-w64-mingw32`. Qt source versions and
+for configure. Windows depends generates static link metadata while staging Core5Compat.
+Autotools reads it from the generated depends prefix. Qt source versions and
 archive checksums are pinned in `depends/packages`.
 
 Native test artifacts are tar archives to retain executable modes and library

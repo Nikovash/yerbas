@@ -31,6 +31,12 @@ $(package)_stage_metadata = && \
     --cmake "$(build_prefix)/bin/cmake" \
     $(if $(linux_qt_cross),--linux-host "$(host_arch)" --target-pkg-config-libdir "$(linux_qt_target_pc)" \
       $(foreach option,$(linux_qt_cmake_cross),--cmake-arg=$(option)))
+else ifeq ($(host_os),mingw32)
+$(package)_stage_metadata = && \
+  python3 $(BASEDIR)/../ci/build-native-qt.py --metadata-only --windows-host "$(host)" \
+    --prefix "$(host_prefix)" --staging-prefix "$($(package)_staging_prefix_dir)" \
+    --probe-dir "$($(package)_build_dir)/static-link" \
+    --cmake "$(build_prefix)/bin/cmake"
 endif
 
 define $(package)_config_cmds

@@ -150,8 +150,9 @@ qt_import_plugins(qt_link_probe INCLUDE Qt6::PLATFORM_PLUGIN Qt6::QMinimalIntegr
                       f'-DCMAKE_C_COMPILER={host}-gcc', f'-DQT_HOST_PATH={prefix}/native']
     if staging_prefix:
         cross_args += [f'-DQt6Core5Compat_DIR={staging_prefix}/lib/cmake/Qt6Core5Compat',
-                       f'-DCMAKE_MODULE_PATH={staging_prefix}/lib/cmake/Qt6',
-                       f'-DOPENSSL_ROOT_DIR={prefix}', '-DOPENSSL_USE_STATIC_LIBS=ON']
+                       f'-DCMAKE_MODULE_PATH={staging_prefix}/lib/cmake/Qt6']
+        if not host:
+            cross_args += [f'-DOPENSSL_ROOT_DIR={prefix}', '-DOPENSSL_USE_STATIC_LIBS=ON']
     run(cmake, '-S', probe, '-B', build, '-G', 'Unix Makefiles',
         f'-DCMAKE_PREFIX_PATH={prefix}', '-DCMAKE_BUILD_TYPE=Release', *cross_args, *cmake_args)
     run(cmake, '--build', build, '--parallel', jobs)
@@ -170,7 +171,7 @@ qt_import_plugins(qt_link_probe INCLUDE Qt6::PLATFORM_PLUGIN Qt6::QMinimalIntegr
     archives = {command[2]: command[3:] for command in commands
                 if len(command) > 3 and command[1] == 'qc'}
     link = [item for token in link for item in archives.get(token, [token])]
-    if staging_prefix:
+    if staging_prefix and not host:
         link = linux_static_desktop_link(link, prefix, build, staging_prefix, target_pc)
         check_linux_elf(build / link[link.index('-o') + 1], linux_host)
     output = link.index('-o')
@@ -259,8 +260,10 @@ def main():
         parser.error('--static-linux requires Linux')
     if args.windows_host and not args.metadata_only:
         parser.error('--windows-host requires --metadata-only')
-    if (args.staging_prefix or args.probe_dir) and not (args.static_linux and args.metadata_only):
-        parser.error('--staging-prefix and --probe-dir require --static-linux --metadata-only')
+    if (args.staging_prefix or args.probe_dir) and not (
+        args.metadata_only and (args.static_linux or args.windows_host)
+    ):
+        parser.error('--staging-prefix and --probe-dir require static Qt metadata generation')
     if (args.linux_host or args.target_pkg_config_libdir or args.cmake_arg) and not (
         args.static_linux and args.metadata_only and args.staging_prefix
         and args.linux_host and args.target_pkg_config_libdir and args.cmake_arg
