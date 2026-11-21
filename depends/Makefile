@@ -117,11 +117,20 @@ ifeq ($(NO_QT),)
 ifeq ($(build_os)_$(host_os)_$(host_arch),linux_mingw32_x86_64)
 qt_packages_ = $(qt_packages) qt qt5compat
 qt_native_packages = native_qt native_qttools
-else ifeq ($(build_os)_$(host_os)_$(build_arch),linux_linux_$(host_arch))
+else ifeq ($(build_os)_$(host_os),linux_linux)
+ifeq ($(host_arch),$(build_arch))
 qt_packages_ = $(qt_packages) xkbcommon qt qt5compat qttools
 qt_native_packages = native_meson native_ninja native_bison
+else ifneq ($(filter $(host_arch),i686 aarch64),)
+linux_qt_cross = 1
+linux_qt_host_tools = native_qt native_qttools
+qt_packages_ = $(qt_packages) xkbcommon qt qt5compat
+qt_native_packages = native_meson native_ninja native_bison $(linux_qt_host_tools)
 else
-$(error GUI dependencies support native Linux/macOS and Linux to x86_64-w64-mingw32. Use NO_QT=1 for other targets)
+$(error Unsupported Linux GUI cross target $(host). Use NO_QT=1 for other targets)
+endif
+else
+$(error GUI dependencies support native Linux/macOS and supported Linux/MinGW cross targets. Use NO_QT=1 for other targets)
 endif
 endif
 endif
@@ -140,6 +149,39 @@ all_packages = $(packages) $(native_packages)
 meta_depends = Makefile funcs.mk builders/default.mk hosts/default.mk hosts/$(host_os).mk builders/$(build_os).mk
 
 $(host_arch)_$(host_os)_native_toolchain?=$($(host_os)_native_toolchain)
+
+# Use compiler-reported multiarch paths when available. Other toolchains
+# can provide paths to their target SDK without searching the build host.
+linux_qt_pkg_env = env -u PKG_CONFIG_LIBDIR PKG_CONFIG_PATH="$(host_prefix)/lib/pkgconfig"
+ifeq ($(linux_qt_cross),1)
+linux_qt_multiarch := $(shell $(host_CC) -print-multiarch 2>/dev/null)
+linux_qt_build_multiarch := $(shell $(build_CC) -print-multiarch 2>/dev/null)
+ifeq ($(origin LINUX_QT_TARGET_PKG_CONFIG_LIBDIR),undefined)
+ifneq ($(wildcard /usr/lib/$(linux_qt_multiarch)/pkgconfig),)
+ifneq ($(linux_qt_multiarch),)
+LINUX_QT_TARGET_PKG_CONFIG_LIBDIR ?= /usr/lib/$(linux_qt_multiarch)/pkgconfig:/usr/share/pkgconfig
+LINUX_QT_TARGET_LIBRARY_PATH ?= /usr/lib/$(linux_qt_multiarch)
+LINUX_QT_TARGET_INCLUDE_PATH ?= /usr/include/$(linux_qt_multiarch)
+endif
+endif
+endif
+ifeq ($(strip $(LINUX_QT_TARGET_PKG_CONFIG_LIBDIR)),)
+$(error Set LINUX_QT_TARGET_PKG_CONFIG_LIBDIR to the target SDK pkg-config directories for $(host))
+endif
+linux_qt_target_pc = $(host_prefix)/lib/pkgconfig:$(LINUX_QT_TARGET_PKG_CONFIG_LIBDIR)
+linux_qt_pkg_env = env -u PKG_CONFIG_SYSROOT_DIR PKG_CONFIG_PATH= PKG_CONFIG_LIBDIR="$(linux_qt_target_pc)"
+linux_qt_ignore_paths = /usr/local/lib;/usr/local/include
+ifneq ($(linux_qt_build_multiarch),)
+linux_qt_ignore_paths := /usr/lib/$(linux_qt_build_multiarch);/lib/$(linux_qt_build_multiarch);/usr/include/$(linux_qt_build_multiarch);$(linux_qt_ignore_paths)
+endif
+linux_qt_cmake_cross = -DCMAKE_SYSTEM_NAME=Linux -DCMAKE_SYSTEM_PROCESSOR=$(host_arch) \
+  -DQT_HOST_PATH="$(build_prefix)" -DCMAKE_PREFIX_PATH="$(host_prefix)" \
+  -DPKG_CONFIG_USE_CMAKE_PREFIX_PATH=OFF \
+  -DCMAKE_LIBRARY_PATH="$(LINUX_QT_TARGET_LIBRARY_PATH)" \
+  -DCMAKE_INCLUDE_PATH="$(LINUX_QT_TARGET_INCLUDE_PATH)" \
+  -DCMAKE_IGNORE_PATH="$(linux_qt_ignore_paths)"
+$(host_arch)_$(host_os)_id_string += $(LINUX_QT_TARGET_PKG_CONFIG_LIBDIR) $(LINUX_QT_TARGET_LIBRARY_PATH) $(LINUX_QT_TARGET_INCLUDE_PATH)
+endif
 
 ifeq ($(host_os),linux)
 qt5compat_recipe_inputs = ../ci/build-native-qt.py
@@ -170,6 +212,7 @@ $(host_prefix)/share/config.site : config.site.in $(host_prefix)/.stamp_$(final_
             -e 's|@STRIP@|$(toolchain_path)$(host_STRIP)|' \
             -e 's|@build_os@|$(build_os)|' \
             -e 's|@host_os@|$(host_os)|' \
+            -e 's|@linux_qt_cross@|$(linux_qt_cross)|' \
             -e 's|@CFLAGS@|$(strip $(host_CFLAGS) $(host_$(release_type)_CFLAGS))|' \
             -e 's|@CXXFLAGS@|$(strip $(host_CXXFLAGS) $(host_$(release_type)_CXXFLAGS))|' \
             -e 's|@CPPFLAGS@|$(strip $(host_CPPFLAGS) $(host_$(release_type)_CPPFLAGS))|' \

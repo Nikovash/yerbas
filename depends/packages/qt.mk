@@ -6,7 +6,7 @@ $(package)_file_name=qtbase-everywhere-src-$($(package)_version).tar.xz
 $(package)_sha256_hash=a951bd163c7b80fc6b8c88d7668fb56abf91c152373e13c10666763238131307
 $(package)_dependencies=native_cmake
 $(package)_mingw32_dependencies=native_qt native_qttools
-$(package)_linux_dependencies=openssl xkbcommon
+$(package)_linux_dependencies=openssl xkbcommon $(linux_qt_host_tools)
 
 $(package)_config_opts_mingw32 = \
     -DCMAKE_SYSTEM_NAME=Windows \
@@ -20,8 +20,8 @@ $(package)_config_opts_mingw32 = \
     -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=ONLY \
     -DCMAKE_FIND_ROOT_PATH_MODE_PROGRAM=NEVER
 
-# Qt's FindXCB uses the host pkg-config paths for extension headers.
-$(package)_config_opts_linux = \
+# Qt uses target pkg-config paths to find the XCB extension headers.
+$(package)_config_opts_linux = $(linux_qt_cmake_cross) \
     -DFEATURE_xcb=ON \
     -DFEATURE_glib=OFF \
     -DFEATURE_vulkan=OFF \
@@ -31,7 +31,7 @@ $(package)_config_opts_linux = \
     -DOPENSSL_USE_STATIC_LIBS=ON
 
 define $(package)_config_cmds
-  $(if $(filter linux,$(host_os)),env -u PKG_CONFIG_LIBDIR PKG_CONFIG_PATH="$(host_prefix)/lib/pkgconfig") \
+  $(if $(filter linux,$(host_os)),$(linux_qt_pkg_env)) \
   $(build_prefix)/bin/cmake -S . -B build -G "Unix Makefiles" \
     -DCMAKE_INSTALL_PREFIX=$(host_prefix) \
     -DCMAKE_BUILD_TYPE=Release \

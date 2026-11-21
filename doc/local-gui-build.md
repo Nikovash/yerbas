@@ -69,6 +69,71 @@ python3 ci/run-unit-tests.py src/test/test_yerbas --output test-results-gui-deps
 QT_QPA_PLATFORM=minimal src/qt/test/test_yerbas-qt
 ```
 
+## Cross-compiling on Linux
+
+Bake's `i686-pc-linux-gnu` and `aarch64-linux-gnu` targets use the same
+static Qt GUI build. Depends builds and runs matching native Qt tools and
+uses the target compiler for Qt, xkbcommon, and the link probe. The examples
+below use Debian 13 and also describe the Debian/Ubuntu multiarch layout.
+The target architecture package names on those distributions are `i386` and
+`arm64`.
+
+For another distribution or a separate target SDK, export the colon-separated
+`LINUX_QT_TARGET_PKG_CONFIG_LIBDIR` before running depends or Bake. Point it at
+target-only pkg-config directories whose metadata resolves to actual target
+paths on the builder. Supply `LINUX_QT_TARGET_LIBRARY_PATH` and
+`LINUX_QT_TARGET_INCLUDE_PATH` if CMake needs additional target search paths.
+Use the compiler and static development archives for the same target ABI.
+These settings apply only to Linux GUI cross builds.
+
+Install the appropriate compiler and libc development sysroot. For i686,
+`g++-i686-linux-gnu libc6-dev-i386-cross` works alongside the AArch64 tools.
+Yerbas also supports `g++-multilib` with `gcc -m32` and `g++ -m32` for
+i686. For AArch64 use `g++-aarch64-linux-gnu libc6-dev-arm64-cross`.
+
+Enable Debian multiarch and install the target desktop development packages
+and their static archives. Run the following for each architecture you build:
+
+```sh
+arch=i386                         # Use arm64 for AArch64.
+set --
+sudo dpkg --add-architecture "$arch"
+sudo apt-get update
+for pkg in libfontconfig-dev libbrotli-dev libx11-xcb-dev libxcb1-dev \
+  libxcb-cursor-dev libxcb-icccm4-dev libxcb-image0-dev libxcb-keysyms1-dev \
+  libxcb-util-dev libxcb-randr0-dev libxcb-render0-dev libxcb-render-util0-dev \
+  libxcb-shape0-dev libxcb-shm0-dev libxcb-sync-dev libxcb-xfixes0-dev \
+  libxcb-xkb-dev libxau-dev libxdmcp-dev; do
+  set -- "$@" "$pkg:$arch"
+done
+sudo apt-get install "$@"
+```
+
+Select the target in Bake or run the usual build steps with its host triplet:
+
+```sh
+host=i686-pc-linux-gnu            # Or aarch64-linux-gnu.
+make -C depends -j2 HOST="$host"
+./autogen.sh
+./configure --prefix="$PWD/depends/$host" --with-gui=qt6
+make -j2
+```
+
+Check the unstripped program on the build host. Use `aarch64` for the ARM64
+build. The checker verifies the ELF architecture, static XCB plugin symbol and
+remaining shared-library requirements without executing the cross binary:
+
+```sh
+python3 ci/build-native-qt.py --check-linux-elf src/qt/yerbas-qt --linux-host i686
+readelf -dW src/qt/yerbas-qt
+readelf --version-info src/qt/yerbas-qt
+```
+
+i686 requires a 32-bit kernel or 32-bit compatibility support on x86-64 and
+a compatible 32-bit Linux loader and runtime. AArch64 requires the AArch64
+loader and runtime. Check the glibc and compiler-runtime symbol versions
+against the destination when targeting older distributions.
+
 ## Linux runtime verification
 
 On the destination, run these checks against a copy of the executable:

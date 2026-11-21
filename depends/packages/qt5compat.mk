@@ -18,20 +18,23 @@ $(package)_config_opts_mingw32 = \
     -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=ONLY \
     -DCMAKE_FIND_ROOT_PATH_MODE_PROGRAM=NEVER
 
-$(package)_config_opts_linux = \
+$(package)_config_opts_linux = $(linux_qt_cmake_cross) \
     -DOPENSSL_ROOT_DIR="$(host_prefix)" \
     -DOPENSSL_USE_STATIC_LIBS=ON
 
 ifeq ($(host_os),linux)
 $(package)_stage_metadata = && \
+  $(linux_qt_pkg_env) CC="$(host_CC)" CXX="$(host_CXX)" \
   python3 $(BASEDIR)/../ci/build-native-qt.py --static-linux --metadata-only \
     --prefix "$(host_prefix)" --staging-prefix "$($(package)_staging_prefix_dir)" \
     --probe-dir "$($(package)_build_dir)/static-link" \
-    --cmake "$(build_prefix)/bin/cmake"
+    --cmake "$(build_prefix)/bin/cmake" \
+    $(if $(linux_qt_cross),--linux-host "$(host_arch)" --target-pkg-config-libdir "$(linux_qt_target_pc)" \
+      $(foreach option,$(linux_qt_cmake_cross),--cmake-arg=$(option)))
 endif
 
 define $(package)_config_cmds
-  $(if $(filter linux,$(host_os)),env -u PKG_CONFIG_LIBDIR PKG_CONFIG_PATH="$(host_prefix)/lib/pkgconfig") \
+  $(if $(filter linux,$(host_os)),$(linux_qt_pkg_env)) \
   $(build_prefix)/bin/cmake -S . -B build -G "Unix Makefiles" \
     -DCMAKE_INSTALL_PREFIX=$(host_prefix) \
     -DCMAKE_BUILD_TYPE=Release \
